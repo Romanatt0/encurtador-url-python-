@@ -1,0 +1,57 @@
+from sqlalchemy import String, create_engine, Column, Integer, ForeignKey
+from sqlalchemy import Enum as SqlEnum
+from sqlalchemy.orm import declarative_base, relationship
+from enum import Enum
+
+
+db = create_engine("sqlite:///banco.db")
+Base = declarative_base()
+
+class AccessLevel(str, Enum):
+    USER = "user"
+    ADMIN = "admin"
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, nullable=False,unique=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False, unique=True)
+    password = Column(String, nullable=False)
+    access = Column(SqlEnum(AccessLevel), default=AccessLevel.USER)
+
+    short_urls = relationship("ShortUrl", back_populates="user", cascade="all, delete-orphan")
+
+    
+    def __init__(self, name, email, password):
+        self.name = name
+        self.email = email
+        self.password = password
+        self.access = AccessLevel.USER
+
+
+class ShortUrl(Base):
+    __tablename__ = "short_urls"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, nullable=False, unique=True)
+    origin_url = Column(String, nullable=False)
+    hash_url = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    user = relationship("User", back_populates="short_urls")
+    metrics = relationship("UrlMetric", back_populates="short_url", cascade="all, delete-orphan")
+
+
+class UrlMetric(Base):
+    __tablename__ = "url_metrics"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, nullable=False, unique=True)
+    day = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=False)
+    amount = Column(Integer, nullable=False)
+
+    short_url_id = Column(Integer, ForeignKey("short_urls.id"), nullable=False)
+    short_url = relationship("ShortUrl", back_populates="metrics")
+        
+
