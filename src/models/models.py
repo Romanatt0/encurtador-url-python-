@@ -36,10 +36,15 @@ class ShortUrl(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, nullable=False, unique=True)
     origin_url = Column(String, nullable=False)
     hash_url = Column(String, nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     user = relationship("User", back_populates="short_urls")
     metrics = relationship("UrlMetric", back_populates="short_url", cascade="all, delete-orphan")
+
+    def __init__(self, origin_url, hash_url, user_id=None):
+        self.origin_url = origin_url
+        self.hash_url = hash_url
+        self.user_id = user_id
 
 
 class UrlMetric(Base):
