@@ -3,13 +3,16 @@ import secrets
 import string
 
 from fastapi import APIRouter, HTTPException, Request, status,Depends
+from fastapi.responses import RedirectResponse, StreamingResponse
 from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 from dependencies.dependencies import get_session
 from models.models import ShortUrl
 from schemas.shortener_schema import shortenerRequest, shortenerResponse
+import qrcode
+import io
 
-shortener_router = APIRouter(prefix="", tags=["users"])
+shortener_router = APIRouter(prefix="", tags=["url_shortener"])
 
 ALPHABET = string.ascii_letters + string.digits
 SHORT_ID_LENGTH = 7
@@ -35,11 +38,6 @@ async def shortenerUrl(request: Request, shortener_request: shortenerRequest, se
     if validate_url(shortener_request.url) != True:
         raise HTTPException(status_code=400, detail="URL invalid")
     
-    url = session.query(ShortUrl).filter(ShortUrl.origin_url == shortener_request.url).first()
-        
-    if url:
-        raise HTTPException(status_code=400, detail="URL already exists")
-    
     try:
         short_id = generate_short_id()
         base_url = str(request.base_url).rstrip("/")
@@ -59,3 +57,34 @@ async def shortenerUrl(request: Request, shortener_request: shortenerRequest, se
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@shortener_router.get("/{short_id}")
+async def redirect_to_url(short_id: str, session: Session = Depends(get_session)):
+    short_url = session.query(ShortUrl).filter_by(hash_url=short_id).first()
+
+    if not short_url:
+        raise HTTPException(status_code=404, detail="URL not found")
+
+    return RedirectResponse(url=short_url.origin_url)
+
+@shortener_router.get("/{short_id}/qrcode")
+async def generate_qrcode(request: Request, short_id: str, session: Session = Depends(get_session)):
+    short_url = session.query(ShortUrl).filter_by(hash_url=short_id).first()
+    
+    if not short_url:
+        raise HTTPException(status_code=404, detail="URL not found")
+
+    base_url = str(request.base_url).rstrip("/")
+    redirect_url = f"{base_url}/{short_id}"
+
+    qr = qrcode.QRCode(box_size=10, border=4)
+    qr.add_data(redirect_url)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+
+    return StreamingResponse(buffer, media_type="image/png")
