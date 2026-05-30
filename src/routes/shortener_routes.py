@@ -11,6 +11,11 @@ from models.models import ShortUrl
 from schemas.shortener_schema import shortenerRequest, shortenerResponse
 import qrcode
 import io
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
 
 shortener_router = APIRouter(prefix="", tags=["url_shortener"])
 
@@ -59,7 +64,8 @@ async def shortenerUrl(request: Request, shortener_request: shortenerRequest, se
         raise HTTPException(status_code=500, detail=str(e))
     
 @shortener_router.get("/{short_id}")
-async def redirect_to_url(short_id: str, session: Session = Depends(get_session)):
+@limiter.limit("5/minute")
+async def redirect_to_url(request: Request, short_id: str, session: Session = Depends(get_session)):
     short_url = session.query(ShortUrl).filter_by(hash_url=short_id).first()
 
     if not short_url:
