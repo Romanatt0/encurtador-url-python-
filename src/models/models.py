@@ -8,6 +8,7 @@ db = create_engine("sqlite:///banco.db")
 Base = declarative_base()
 
 class AccessLevel(str, Enum):
+    SUB = "subscriber"
     USER = "user"
     ADMIN = "admin"
 

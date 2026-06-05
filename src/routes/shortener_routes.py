@@ -1,13 +1,14 @@
 
 import secrets
 import string
+from datetime import date
 
 from fastapi import APIRouter, HTTPException, Request, status,Depends
 from fastapi.responses import RedirectResponse, StreamingResponse
 from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 from dependencies.dependencies import get_session
-from models.models import ShortUrl
+from models.models import ShortUrl, UrlMetric
 from schemas.shortener_schema import shortenerRequest, shortenerResponse
 import qrcode
 import io
@@ -70,6 +71,32 @@ async def redirect_to_url(request: Request, short_id: str, session: Session = De
 
     if not short_url:
         raise HTTPException(status_code=404, detail="URL not found")
+
+    today = date.today()
+    metric = (
+        session.query(UrlMetric)
+        .filter_by(
+            short_url_id=short_url.id,
+            day=today.day,
+            month=today.month,
+            year=today.year,
+        )
+        .first()
+    )
+
+    if metric:
+        metric.amount += 1
+    else:
+        metric = UrlMetric(
+            day=today.day,
+            month=today.month,
+            year=today.year,
+            amount=1,
+            short_url_id=short_url.id,
+        )
+        session.add(metric)
+
+    session.commit()
 
     return RedirectResponse(url=short_url.origin_url)
 
