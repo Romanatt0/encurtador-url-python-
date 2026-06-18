@@ -12,11 +12,7 @@ from models.models import ShortUrl, UrlMetric
 from schemas.shortener_schema import shortenerRequest, shortenerResponse
 import qrcode
 import io
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-
-limiter = Limiter(key_func=get_remote_address)
+from core.rate_limiter import limiter
 
 shortener_router = APIRouter(prefix="", tags=["url_shortener"])
 

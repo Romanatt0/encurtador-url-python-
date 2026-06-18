@@ -3,7 +3,9 @@ from fastapi import FastAPI
 from routes.shortener_routes import shortener_router
 from routes.metrics_routes import metrics_router
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.middleware import SlowAPIMiddleware
 
+from core.rate_limiter import limiter, setup_rate_limit
 app = FastAPI(
     title="Encurtador-Url-API",
     description="API de serviça de encurtador de url",
@@ -13,6 +15,9 @@ app = FastAPI(
     ]
 
 )
+
+setup_rate_limit(app)
+app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware, 
