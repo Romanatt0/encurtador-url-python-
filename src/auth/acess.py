@@ -5,6 +5,7 @@ import jwt
 from auth.auth import oauth2_scheme, decode_token
 from dependencies.dependencies import get_session
 from models.models import User
+from services.user_service import get_user_by_email
 
 
 def get_current_user(
@@ -44,7 +45,7 @@ def get_current_user(
     except jwt.InvalidTokenError:
         raise credentials_exception
 
-    user = session.query(User).filter(User.email == user_email).first()
+    user = get_user_by_email(session, user_email)
     if user is None:
         raise credentials_exception
 

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from routes.shortener_routes import shortener_router
 from routes.metrics_routes import metrics_router
+from routes.user_routes import user_router
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -33,3 +34,4 @@ app.add_middleware(
 
 app.include_router(shortener_router)
 app.include_router(metrics_router)
+app.include_router(user_router)

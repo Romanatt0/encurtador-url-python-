@@ -1,30 +1,45 @@
-from schemas.user_schema import UserCreateRequest, UserResponse
+from auth.acess import get_current_user
+from schemas.shortener_schema import shortenerRequest, shortenerResponse
+from schemas.token_schema import TokenResponse
+from schemas.user_schema import UserCreateRequest, UserLoginRequest, UserResponse
 from models.models import User
-from fastapi import APIRouter, HTTPException, Request, status,Depends
+from fastapi import APIRouter, Request, status,Depends
 from sqlalchemy.orm import Session
 from dependencies.dependencies import get_session
-from auth.auth import bcrypt_hash
+from services.short_url_service import create_short_url
+from services.user_service import authenticate_user, create_user as create_user_service
 
-user_router = APIRouter(prefix="", tags=["user"])
+user_router = APIRouter(prefix="/user", tags=["user"])
 
 
-@user_router.post("/users", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
+@user_router.post("/create", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
 async def create_user(user_request: UserCreateRequest, session: Session = Depends(get_session)):
-    existing_user = session.query(User).filter(User.email == user_request.email).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-
-    hash_password = bcrypt_hash.hash(user_request.password)
-    new_user = User(
-        name=user_request.name,
-        email=user_request.email,
-        password=hash_password
-    )
-
-    session.add(new_user)
-    session.commit()
+    new_user = create_user_service(session, user_request.name, user_request.email, user_request.password)
 
     return UserResponse(
         name=new_user.name,
         email=new_user.email
     )
+
+
+@user_router.post("/login", status_code=status.HTTP_200_OK, response_model=TokenResponse)
+async def login_user(user_request: UserLoginRequest, session: Session = Depends(get_session)):
+    tokens = authenticate_user(session, user_request.email, user_request.password)
+
+    return TokenResponse(
+        access_token=tokens["access_token"],
+        refresh_token=tokens["refresh_token"]
+    )
+
+
+@user_router.post("/createUrl", status_code=status.HTTP_201_CREATED, response_model=shortenerResponse)
+async def create_url(request: Request, shortener_request: shortenerRequest, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    short_url = create_short_url(session, shortener_request.url, current_user.id)
+    base_url = str(request.base_url).rstrip("/")
+
+    return {
+        "url": shortener_request.url,
+        "short_url": f"{base_url}/{short_url.hash_url}",
+    }
+
+

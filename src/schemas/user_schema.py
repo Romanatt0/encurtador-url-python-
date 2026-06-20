@@ -1,17 +1,23 @@
-import pydantic
+from pydantic import BaseModel, ConfigDict
 
 
-class UserRequest(pydantic.BaseModel):
-    username: str
+class UserCreateRequest(BaseModel):
+    name: str
     email: str
     password: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
-class UserResponse(pydantic.BaseModel):
-    username: str
+
+class UserLoginRequest(BaseModel):
+    email: str
+    password: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserResponse(BaseModel):
+    name: str
     email: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
