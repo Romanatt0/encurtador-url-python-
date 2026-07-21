@@ -12,6 +12,7 @@ shortener_router = APIRouter(prefix="", tags=["url_shortener"])
 
 
 @shortener_router.post("/short", status_code=status.HTTP_201_CREATED, response_model=shortenerResponse)
+@limiter.limit("10/minute")
 async def shortenerUrl(request: Request, shortener_request: shortenerRequest, session: Session = Depends(get_session)):
     try:
         short_url = create_short_url(session, shortener_request.url)
@@ -35,6 +36,7 @@ async def redirect_to_url(request: Request, short_id: str, session: Session = De
     return RedirectResponse(url=short_url.origin_url)
 
 @shortener_router.get("/{short_id}/qrcode")
+@limiter.limit("5/minute")
 async def generate_qrcode(request: Request, short_id: str, session: Session = Depends(get_session)):
     short_url = get_active_short_url_or_404(session, short_id)
 

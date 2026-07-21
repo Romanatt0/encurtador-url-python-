@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 import jwt
-
+from auth.auth import create_access_token
 from auth.auth import oauth2_scheme, decode_token
 from dependencies.dependencies import get_session
 from models.models import User
@@ -50,3 +50,50 @@ def get_current_user(
         raise credentials_exception
 
     return user
+
+
+def refresh_user(token: str, session: Session = Depends(get_session)) -> dict:
+    """
+    Função para gerar um novo access token a partir de um refresh token.
+    """
+
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Credenciais inválidas",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = decode_token(token)
+
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token inválido. Use um refresh token.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        user_email: str = payload.get("sub")
+        if user_email is None:
+            raise credentials_exception
+        
+        user = get_user_by_email(session, user_email)
+        if user is None:
+            raise credentials_exception
+
+        # Gerar um novo access token
+        new_access_token = create_access_token({"sub": user.email})
+
+        return {
+            "access_token": new_access_token,
+            "token_type": "bearer"
+        }
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token expirado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
+        raise credentials_exception
