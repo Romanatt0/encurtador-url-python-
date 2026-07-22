@@ -37,8 +37,10 @@ Hoje a aplicação já está organizada em camadas de rota, service, schema, aut
 ```text
 src/
   alembic/
+    env.py
     versions/
   auth/
+    __init__.py
     acess.py
     auth.py
   core/
@@ -63,8 +65,6 @@ src/
   utils/
     short_code.py
     url_utils.py
-  alembic.ini
-  banco.db
   main.py
 requirements.txt
 ```
@@ -224,6 +224,8 @@ Campos:
 
 Cria uma URL curta anônima.
 
+Rate limit: `10/minute`
+
 Request:
 
 ```json
@@ -245,6 +247,8 @@ Response:
 
 Redireciona para a URL original.
 
+Rate limit: `5/minute`
+
 Observações:
 
 - possui rate limit de `5/minute`
@@ -255,6 +259,8 @@ Observações:
 
 Gera um QR Code PNG apontando para a URL curta.
 
+Rate limit: `5/minute`
+
 ### Usuário
 
 Prefixo base: `/user`
@@ -262,6 +268,8 @@ Prefixo base: `/user`
 #### `POST /user/create`
 
 Cria usuário.
+
+Rate limit: `5/minute`
 
 Request:
 
@@ -276,6 +284,8 @@ Request:
 #### `POST /user/login`
 
 Autentica usuário e retorna tokens.
+
+Rate limit: `5/minute`
 
 Request:
 
@@ -295,9 +305,55 @@ Response:
 }
 ```
 
+#### `GET /user/me`
+
+Retorna informações do usuário autenticado.
+
+Rate limit: `50/minute`
+
+Headers:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+Response:
+
+```json
+{
+  "name": "Victor",
+  "email": "victor@email.com"
+}
+```
+
+#### `POST /user/refresh`
+
+Gera um novo access token a partir de um refresh token.
+
+Rate limit: `5/minute`
+
+Request:
+
+```json
+{
+  "access_token": "<refresh_token>"
+}
+```
+
+Response:
+
+```json
+{
+  "refresh_token": "...",
+  "token_type": "bearer"
+}
+```
+
 #### `POST /user/createUrl`
 
 Cria uma URL curta vinculada ao usuário autenticado.
+
+Rate limit: `5/minute`
 
 Headers:
 
@@ -321,13 +377,19 @@ As rotas de métricas exigem autenticação e validam ownership.
 
 Retorna métricas do dia da URL do usuário.
 
+Rate limit: `5/minute`
+
 #### `GET /metrics/month/{short_id}`
 
 Retorna soma das métricas do mês atual.
 
+Rate limit: `5/minute`
+
 #### `GET /metrics/year/{short_id}`
 
 Retorna soma das métricas do ano atual.
+
+Rate limit: `5/minute`
 
 ## Autenticação
 

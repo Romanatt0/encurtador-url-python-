@@ -34,7 +34,7 @@ async def login_user(request: Request,user_request: UserLoginRequest, session: S
     )
 
 @user_router.get("/me", status_code=status.HTTP_200_OK, response_model=UserResponse)
-@limiter.limit("5/minute")
+@limiter.limit("50/minute")
 async def get_current_user_info(request: Request, current_user: User = Depends(get_current_user)):
     return UserResponse(
         name=current_user.name,
