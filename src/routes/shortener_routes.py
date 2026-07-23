@@ -1,12 +1,14 @@
 from fastapi import APIRouter, HTTPException, Request, status,Depends
 from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
+from auth.acess import get_current_user
 from dependencies.dependencies import get_session
-from schemas.shortener_schema import shortenerRequest, shortenerResponse
+from models.models import User
+from schemas.shortener_schema import shortenerRequest, shortenerResponse, allLinksResponse
 import qrcode
 import io
 from core.rate_limiter import limiter
-from services.short_url_service import create_short_url, get_active_short_url_or_404, register_url_access
+from services.short_url_service import create_short_url, get_active_short_url_or_404, get_all_short_urls, register_url_access
 
 shortener_router = APIRouter(prefix="", tags=["url_shortener"])
 
@@ -34,6 +36,29 @@ async def redirect_to_url(request: Request, short_id: str, session: Session = De
     register_url_access(session, short_url)
 
     return RedirectResponse(url=short_url.origin_url)
+
+@shortener_router.get("/all_links", status_code=status.HTTP_200_OK, response_model=allLinksResponse)
+async def get_all_links(request: Request, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+
+    try:
+        short_urls = get_all_short_urls(session, current_user)
+        base_url = str(request.base_url).rstrip("/")
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    return allLinksResponse(
+        links=[
+            shortenerResponse(
+                url=short_url.origin_url,
+                short_url=f"{base_url}/{short_url.hash_url}",
+                expiration_date=short_url.expires_at.isoformat() if short_url.expires_at else None
+            )
+            for short_url in short_urls
+        ]
+    )
 
 @shortener_router.get("/{short_id}/qrcode")
 @limiter.limit("5/minute")

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from models.models import ShortUrl, UrlMetric
 from utils.short_code import generate_short_id
 from utils.url_utils import validate_url
-
+from models.models import User
 ANONYMOUS_EXPIRATION_DAYS = 7
 AUTHENTICATED_EXPIRATION_DAYS = 30
 
@@ -42,6 +42,20 @@ def create_short_url(session: Session, original_url: str, user_id: int | None = 
     session.refresh(short_url)
 
     return short_url
+
+def get_all_short_urls(session: Session, user: User ) -> list[ShortUrl]:
+    try:
+        query = session.query(ShortUrl).filter(ShortUrl.user_id == user.id)
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Error occurred while fetching short URLs")
+
+    if not query:
+        raise HTTPException(status_code=404, detail="No short URLs found for the user")
+
+    return query.all()
 
 
 def get_short_url_by_hash(session: Session, short_id: str) -> ShortUrl | None:

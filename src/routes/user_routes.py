@@ -52,7 +52,6 @@ async def create_url(request: Request, shortener_request: shortenerRequest, curr
         "short_url": f"{base_url}/{short_url.hash_url}",
     }
 
-
 @user_router.post("/refresh", status_code=status.HTTP_200_OK, response_model=TokenResponse)
 @limiter.limit("5/minute")
 async def refresh_token(RefreshTokenRequest: RefreshTokenRequest, request: Request, session: Session = Depends(get_session)):
