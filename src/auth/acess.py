@@ -1,4 +1,5 @@
 from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 import jwt
 from auth.auth import create_access_token
@@ -6,6 +7,30 @@ from auth.auth import oauth2_scheme, decode_token
 from dependencies.dependencies import get_session
 from models.models import User
 from services.user_service import get_user_by_email
+
+
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/user/login", auto_error=False)
+
+
+def get_optional_current_user(
+    token: str | None = Depends(oauth2_scheme_optional),
+    session: Session = Depends(get_session),
+) -> User | None:
+    if token is None:
+        return None
+    try:
+        payload = decode_token(token)
+        if payload.get("type") != "access":
+            return None
+        user_email: str = payload.get("sub")
+        if user_email is None:
+            return None
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None
+    user = get_user_by_email(session, user_email)
+    if user is None:
+        return None
+    return user
 
 
 def get_current_user(
