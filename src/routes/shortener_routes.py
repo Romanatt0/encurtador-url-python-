@@ -8,7 +8,8 @@ from schemas.shortener_schema import shortenerRequest, shortenerResponse, allLin
 import qrcode
 import io
 from core.rate_limiter import limiter
-from services.short_url_service import create_short_url, get_active_short_url_or_404, get_all_short_urls, register_url_access
+from datetime import datetime, timedelta
+from services.short_url_service import create_short_url, get_active_short_url_or_404, get_all_short_urls, get_short_url_by_hash, register_url_access, refresh_url
 
 shortener_router = APIRouter(prefix="", tags=["url_shortener"])
 
@@ -19,7 +20,7 @@ async def shortenerUrl(request: Request, shortener_request: shortenerRequest, cu
     try:
 
         if current_user:
-            short_url = create_short_url(session, shortener_request.url, current_user.id)  
+            short_url = create_short_url(session, shortener_request.url, current_user)  
         else:
             short_url = create_short_url(session, shortener_request.url)
 
@@ -27,7 +28,7 @@ async def shortenerUrl(request: Request, shortener_request: shortenerRequest, cu
 
         return {
             "url": shortener_request.url,
-            "short_url": f"{base_url}/{short_url.hash_url}",
+            "short_url": f"{base_url}/s/{short_url.hash_url}",
         }
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -81,9 +82,49 @@ async def get_all_links(request: Request, current_user: User = Depends(get_curre
         links=[
             shortenerResponse(
                 url=short_url.origin_url,
-                short_url=f"{base_url}/{short_url.hash_url}",
+                short_url=f"{base_url}/s/{short_url.hash_url}",
                 expiration_date=short_url.expires_at.isoformat() if short_url.expires_at else None
             )
             for short_url in short_urls
         ]
     )
+
+@shortener_router.delete("/delete/{short_id}", status_code=status.HTTP_200_OK)
+@limiter.limit("5/minute")
+async def delete_short_url(request: Request, short_id: str, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    try:
+        short_url = get_short_url_by_hash(session, short_id)
+
+        if not short_url:
+            raise HTTPException(status_code=404, detail="URL not found")
+
+        if short_url.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to delete this URL.")
+
+        session.delete(short_url)
+        session.commit()
+
+        return {"detail": "Short URL deleted successfully."}
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+
+@shortener_router.post("/refresh/{short_id}", status_code=status.HTTP_200_OK, response_model=shortenerResponse)
+@limiter.limit("5/minute")
+async def refresh_short_url(request: Request, short_id: str, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    try:
+
+        short_url = refresh_url(session, short_id, current_user)
+
+        base_url = str(request.base_url).rstrip("/")
+
+        return shortenerResponse(
+            url=short_url.origin_url,
+            short_url=f"{base_url}/{short_url.hash_url}",
+            expiration_date=short_url.expires_at.isoformat() if short_url.expires_at else None
+        )
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))

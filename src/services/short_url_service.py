@@ -9,6 +9,7 @@ from utils.url_utils import validate_url
 from models.models import User
 ANONYMOUS_EXPIRATION_DAYS = 7
 AUTHENTICATED_EXPIRATION_DAYS = 30
+SUBSCRIPTION_EXPIRATION_DAYS = 365
 
 
 def _build_expiration(user_id: int | None) -> datetime:
@@ -22,20 +23,33 @@ def _normalize_datetime(value: datetime) -> datetime:
     return value
 
 
-def create_short_url(session: Session, original_url: str, user_id: int | None = None) -> ShortUrl:
+def create_short_url(session: Session, original_url: str, current_user: User | None = None) -> ShortUrl:
     if not validate_url(original_url):
         raise HTTPException(status_code=400, detail="URL invalid")
 
-    short_id = generate_short_id()
-    while session.query(ShortUrl).filter(ShortUrl.hash_url == short_id).first():
+    if current_user:
+        
         short_id = generate_short_id()
+        while session.query(ShortUrl).filter(ShortUrl.hash_url == short_id).first():
+            short_id = generate_short_id()
 
-    short_url = ShortUrl(
-        origin_url=original_url,
-        hash_url=short_id,
-        user_id=user_id,
-        expires_at=_build_expiration(user_id),
-    )
+        short_url = ShortUrl(
+            origin_url=original_url,
+            hash_url=short_id,
+            user_id=current_user.id,
+            expires_at=_build_expiration(current_user.id),
+        )
+
+    else:
+        short_id = generate_short_id()
+        while session.query(ShortUrl).filter(ShortUrl.hash_url == short_id).first():
+            short_id = generate_short_id()
+
+        short_url = ShortUrl(
+            origin_url=original_url,
+            hash_url=short_id,
+            expires_at=_build_expiration(None),
+        )
 
     session.add(short_url)
     session.commit()
@@ -99,3 +113,26 @@ def register_url_access(session: Session, short_url: ShortUrl) -> None:
         session.add(metric)
 
     session.commit()
+
+def refresh_url(session: Session, url_code: str, current_user: User) -> ShortUrl:
+
+    try:
+        short_url = get_short_url_by_hash(session, url_code)
+        if not short_url:
+            raise HTTPException(status_code=404, detail="URL not found")
+
+        if not current_user.id:
+            raise HTTPException(status_code=401, detail="Authentication required to refresh the URL.")
+        
+        if short_url.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You do not have permission to refresh this URL.")
+        
+        short_url.expires_at = _build_expiration(short_url.user_id)
+        session.commit()
+        session.refresh(short_url)
+        return short_url
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
