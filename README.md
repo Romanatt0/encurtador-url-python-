@@ -62,6 +62,13 @@ src/
     metric_service.py
     short_url_service.py
     user_service.py
+  tests/
+    conftest.py
+    test_auth/
+    test_routes/
+    test_schemas/
+    test_services/
+    test_utils/
   utils/
     short_code.py
     url_utils.py
@@ -581,9 +588,9 @@ sqlite:///banco.db
 
 Como o banco real do projeto está em `src/banco.db`, o comportamento depende do diretório atual de execução. O ideal é padronizar esse caminho para evitar abrir bancos diferentes sem perceber.
 
-### Ausência de testes automatizados
+### Ausência de testes automatizados (resolvido)
 
-Hoje não há suíte de testes no repositório.
+Testes foram adicionados — veja seção [Testes](#testes).
 
 ### Naming inconsistente
 
@@ -598,7 +605,7 @@ Alguns nomes ainda podem ser melhorados futuramente:
 1. corrigir dependências do `requirements.txt`
 2. alinhar `tokenUrl` com `/user/login`
 3. padronizar caminho do banco SQLite
-4. adicionar testes para services e rotas
+4. ~~adicionar testes para services e rotas~~ (concluído)
 5. adicionar deleção ou limpeza de URLs expiradas
 6. adicionar planos de acesso com base em `AccessLevel`
 7. padronizar nomes de rotas e schemas
@@ -615,4 +622,74 @@ O projeto já possui uma boa base funcional para um micro SaaS de encurtamento d
 - migrations com Alembic
 - separação de regra de negócio em services
 
-Os próximos passos mais importantes são estabilizar dependências, alinhar migrations com o banco local e adicionar testes.
+Os próximos passos mais importantes são estabilizar dependências e alinhar migrations com o banco local.
+
+## Testes
+
+### Stack de testes
+
+- **pytest** (runner)
+- **httpx** (TestClient do FastAPI)
+- **pytest-cov** (cobertura)
+- **SQLite in-memory** (banco isolado por sessão de teste)
+
+### Estrutura
+
+```
+src/tests/
+  conftest.py              # fixtures: engine, db_session, app, client, tokens
+  test_auth/
+    test_auth.py           # JWT create/decode, tipos de token, expiração
+  test_routes/
+    test_metrics_routes.py # GET /metrics/day|month|year/{short_id}
+    test_shortener_routes.py # POST /short, GET /s/{id}, DELETE, refresh, qrcode
+    test_user_routes.py    # POST /user/create|login|refresh, GET /user/me
+  test_schemas/
+    test_metric_schema.py
+    test_shortener_schema.py
+    test_token_schema.py
+    test_user_schema.py
+  test_services/
+    test_metric_service.py    # get_daily|monthly|yearly_metrics
+    test_short_url_service.py # create, get, refresh, delete, register_access
+    test_user_service.py      # create_user, authenticate_user
+  test_utils/
+    test_short_code.py    # generate_short_id
+    test_url_utils.py     # validate_url
+```
+
+### Como executar
+
+A partir da pasta `src/`:
+
+```powershell
+$env:PYTHONPATH = "D:\caminho\para\src"
+..\venv\Scripts\pytest tests/ -v
+```
+
+Com relatório de cobertura:
+
+```powershell
+..\venv\Scripts\pytest tests/ --cov=. --cov-report=term
+```
+
+### Cobertura
+
+Os testes cobrem **~91% do código da aplicação** (excluindo `main.py`):
+
+| Camada       | Cobertura |
+|--------------|-----------|
+| Models       | 100%      |
+| Utils        | 100%      |
+| Auth         | 100%      |
+| Schemas      | 100%      |
+| Services     | 87-100%   |
+| Routes       | 92-100%   |
+
+### Dependências adicionais para testes
+
+```txt
+pytest>=8.0
+pytest-cov>=5.0
+httpx>=0.27
+```

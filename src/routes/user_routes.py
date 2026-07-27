@@ -44,7 +44,7 @@ async def get_current_user_info(request: Request, current_user: User = Depends(g
 @user_router.post("/createUrl", status_code=status.HTTP_201_CREATED, response_model=shortenerResponse)
 @limiter.limit("5/minute")
 async def create_url(request: Request, shortener_request: shortenerRequest, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    short_url = create_short_url(session, shortener_request.url, current_user.id)
+    short_url = create_short_url(session, shortener_request.url, current_user)
     base_url = str(request.base_url).rstrip("/")
 
     return {
@@ -52,12 +52,11 @@ async def create_url(request: Request, shortener_request: shortenerRequest, curr
         "short_url": f"{base_url}/{short_url.hash_url}",
     }
 
-@user_router.post("/refresh", status_code=status.HTTP_200_OK, response_model=TokenResponse)
+@user_router.post("/refresh", status_code=status.HTTP_200_OK, response_model=RefreshTokenResponse)
 @limiter.limit("5/minute")
 async def refresh_token(RefreshTokenRequest: RefreshTokenRequest, request: Request, session: Session = Depends(get_session)):
-    paylaod = refresh_user(RefreshTokenRequest.access_token)
+    payload = refresh_user(RefreshTokenRequest.access_token, session)
 
-
-    return RefreshTokenResponse( refresh_token=paylaod["access_token"], token_type="bearer")
+    return RefreshTokenResponse(refresh_token=payload["access_token"], token_type="bearer")
 
 
