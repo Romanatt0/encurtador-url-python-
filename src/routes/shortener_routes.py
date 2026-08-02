@@ -116,7 +116,6 @@ async def refresh_short_url(request: Request, short_id: str, current_user: User 
     try:
 
         short_url = refresh_url(session, short_id, current_user)
-
         base_url = str(request.base_url).rstrip("/")
 
         return shortenerResponse(
