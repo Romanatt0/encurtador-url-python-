@@ -8,6 +8,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}
+      HASH: ${{ secrets.HASH }}
+      REFRESH_TOKEN_EXPIRE_MINUTES: ${{ secrets.REFRESH_TOKEN_EXPIRE_MINUTES }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -26,8 +32,3 @@ jobs:
         run: |
           cd src
           PYTHONPATH=. pytest tests/ --cov=. --cov-report=term
-        env:
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          HASH: HS256
-          ACCESS_TOKEN_EXPIRE_MINUTES: 30
-          REFRESH_TOKEN_EXPIRE_MINUTES: 1080
