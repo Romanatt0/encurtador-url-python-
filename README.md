@@ -24,13 +24,15 @@ Hoje a aplicação já está organizada em camadas de rota, service, schema, aut
 - Python
 - FastAPI
 - SQLAlchemy
-- SQLite
+- PostgreSQL
+- SQLite (apenas como fallback local/desenvolvimento)
 - Alembic
 - Pydantic
 - SlowAPI
 - Passlib + bcrypt
 - PyJWT
 - qrcode
+- Docker + docker-compose
 
 ## Estrutura Do Projeto
 
@@ -169,17 +171,22 @@ As consultas mensal e anual somam os registros diários armazenados.
 
 ## Banco De Dados
 
-O projeto usa SQLite com arquivo local em:
+O projeto usa **PostgreSQL** (container Docker) e **SQLite** apenas como fallback para execução local sem Docker.
 
-- `src/banco.db`
+A URL de conexão é lida da variável de ambiente `DATABASE_URL`:
 
-O engine SQLAlchemy é definido em `src/models/models.py` com:
+- `postgresql+psycopg2://postgres:postgres@postgres:5432/encurtador` — dentro da rede Docker
+- `postgresql+psycopg2://postgres:postgres@localhost:5433/encurtador` — acesso externo ao container (DBeaver, apps locais)
+
+O engine SQLAlchemy é definido em `src/models/models.py`:
 
 ```python
-db = create_engine("sqlite:///banco.db")
+db = create_engine(os.getenv("DATABASE_URL", "sqlite:///banco.db"))
 ```
 
 As sessões são abertas via `get_session()` em `src/dependencies/dependencies.py`.
+
+Se `DATABASE_URL` não estiver definida, o SQLite (`banco.db`) é usado para desenvolvimento local.
 
 ## Models
 
@@ -423,12 +430,14 @@ O token deve conter:
 
 ## Configuração De Ambiente
 
-O projeto lê variáveis do `.env` para autenticação:
+O projeto lê variáveis do `.env` para configuração:
 
 - `SECRET_KEY`
 - `HASH`
 - `ACCESS_TOKEN_EXPIRE_MINUTES`
 - `REFRESH_TOKEN_EXPIRE_MINUTES`
+- `API_KEY`
+- `DATABASE_URL`
 
 ## Migrations Com Alembic
 
@@ -461,9 +470,78 @@ py -m alembic -c "src/alembic.ini" upgrade head
 py -m alembic -c "src/alembic.ini" revision --autogenerate -m "descricao"
 ```
 
+## Docker
+
+A aplicação roda em containers com dois serviços:
+
+- `api` — imagem própria definida no `Dockerfile`, porta `8000`
+- `postgres` — imagem `postgres:17`, dados persistidos no volume `postgres_data`
+
+Mapeamento de portas:
+
+| Serviço | Host | Container |
+|---|---|---|
+| api | 8000 | 8000 |
+| postgres | 5433 | 5432 |
+
+> A porta do host do Postgres é `5433` para evitar conflito com um PostgreSQL
+> nativo do Windows que ocupa a `5432`. Por isso o DBeaver e ferramentas externas
+> usam `localhost:5433`.
+
+### Subir os containers
+
+```powershell
+docker compose up --build -d
+```
+
+No primeiro `up`, a API executa `alembic upgrade head` automaticamente (comando do `Dockerfile`), criando as tabelas no Postgres.
+
+### Comandos úteis
+
+```powershell
+docker ps -a                   # listar containers
+docker compose logs -f api     # acompanhar logs da API
+docker compose down            # parar (preserva volume de dados e imagens)
+docker compose down -v         # parar e apagar o volume de dados
+docker compose down --rmi all  # parar e remover as imagens
+docker images                  # listar imagens
+```
+
+### Acessando o banco (DBeaver e afins)
+
+O serviço `postgres` é criado com:
+
+- `POSTGRES_DB=encurtador`
+- `POSTGRES_USER=postgres`
+- `POSTGRES_PASSWORD=postgres`
+
+No DBeaver:
+
+- **Host:** `localhost`
+- **Porta:** `5433`
+- **Database:** `encurtador`
+- **User:** `postgres`
+- **Password:** `postgres`
+
+Ou pela JDBC URL:
+
+```
+jdbc:postgresql://localhost:5433/encurtador?user=postgres&password=postgres
+```
+
 ## Como Executar
 
-### 1. Criar e ativar ambiente virtual
+### 1. Com Docker (recomendado)
+
+```powershell
+docker compose up --build -d
+```
+
+API em `http://localhost:8000` / docs em `http://localhost:8000/docs`.
+
+Os passos a seguir são apenas para execução local **sem** Docker (passam a usar SQLite, salvo se `DATABASE_URL` apontar para um Postgres acessível).
+
+### 2. Criar e ativar ambiente virtual
 
 Windows PowerShell:
 
@@ -472,13 +550,13 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 ```
 
-### 2. Instalar dependências
+### 3. Instalar dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Aplicar migrations
+### 4. Aplicar migrations
 
 Na pasta `src`:
 
@@ -486,7 +564,7 @@ Na pasta `src`:
 alembic upgrade head
 ```
 
-### 4. Subir a API
+### 5. Subir a API
 
 Na pasta `src`:
 
@@ -535,58 +613,25 @@ uvicorn main:app --reload
 
 Esta seção documenta o estado real atual do projeto.
 
-### Dependências incompletas no `requirements.txt`
+### Dependências incompletas no `requirements.txt` (resolvido)
 
-O arquivo `requirements.txt` atual não inclui algumas bibliotecas que o código usa diretamente, como:
+O `requirements.txt` agora inclui todas as bibliotecas usadas pelo código (`alembic`, `python-dotenv`, `passlib`, `bcrypt`, `PyJWT`, `qrcode`, `slowapi`) além do driver `psycopg2-binary` para PostgreSQL.
 
-- `alembic`
-- `python-dotenv`
-- `passlib`
-- `bcrypt`
-- `PyJWT`
-- `qrcode`
-- `slowapi`
+### Incompatibilidade observada entre `passlib` e `bcrypt` (resolvido)
 
-Sem elas, a aplicação não sobe corretamente em um ambiente limpo.
+O problema de hashing com `bcrypt==5.0.0` foi evitado fixando `bcrypt==4.3.0` no `requirements.txt`.
 
-### Incompatibilidade observada entre `passlib` e `bcrypt`
+### `tokenUrl` diferente do endpoint real (resolvido)
 
-Foi observado erro de hashing com:
+`OAuth2PasswordBearer` agora aponta para `tokenUrl="/user/login"`, alinhado com a rota real.
 
-- `passlib==1.7.4`
-- `bcrypt==5.0.0`
+### Engine do banco e caminho do SQLite (resolvido)
 
-O sintoma aparece como erro de senha maior que 72 bytes mesmo para senhas curtas.
-
-Sugestão prática:
-
-- usar `bcrypt==4.0.1`
-
-### `tokenUrl` diferente do endpoint real
-
-Em `src/auth/auth.py`, o `OAuth2PasswordBearer` usa:
+O engine agora lê `DATABASE_URL` do ambiente (PostgreSQL no Docker) com fallback para SQLite local:
 
 ```python
-tokenUrl="/users/login"
+db = create_engine(os.getenv("DATABASE_URL", "sqlite:///banco.db"))
 ```
-
-Mas a rota real registrada hoje é:
-
-```text
-POST /user/login
-```
-
-Isso deve ser ajustado para evitar inconsistência no Swagger e no fluxo OAuth2.
-
-### Engine do banco e caminho do SQLite
-
-O SQLAlchemy usa:
-
-```python
-sqlite:///banco.db
-```
-
-Como o banco real do projeto está em `src/banco.db`, o comportamento depende do diretório atual de execução. O ideal é padronizar esse caminho para evitar abrir bancos diferentes sem perceber.
 
 ### Ausência de testes automatizados (resolvido)
 
@@ -602,9 +647,9 @@ Alguns nomes ainda podem ser melhorados futuramente:
 
 ## Melhorias Naturais Futuras
 
-1. corrigir dependências do `requirements.txt`
-2. alinhar `tokenUrl` com `/user/login`
-3. padronizar caminho do banco SQLite
+1. ~~corrigir dependências do `requirements.txt`~~ (concluído)
+2. ~~alinhar `tokenUrl` com `/user/login`~~ (concluído)
+3. ~~padronizar caminho do banco SQLite~~ (concluído — `DATABASE_URL` com fallback)
 4. ~~adicionar testes para services e rotas~~ (concluído)
 5. adicionar deleção ou limpeza de URLs expiradas
 6. adicionar planos de acesso com base em `AccessLevel`
@@ -621,8 +666,9 @@ O projeto já possui uma boa base funcional para um micro SaaS de encurtamento d
 - QR Code
 - migrations com Alembic
 - separação de regra de negócio em services
+- execução conteinerizada com Docker Compose (API + PostgreSQL)
 
-Os próximos passos mais importantes são estabilizar dependências e alinhar migrations com o banco local.
+Próximos passos naturais: deleção/limpeza de URLs expiradas e padronização de nomes de rotas e schemas.
 
 ## Testes
 
