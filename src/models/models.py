@@ -1,3 +1,7 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 from sqlalchemy import String, create_engine, Column, Integer, ForeignKey, DateTime
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.orm import declarative_base, relationship
@@ -5,7 +9,7 @@ from enum import Enum
 from datetime import datetime
 
 
-db = create_engine("sqlite:///banco.db")
+db = create_engine(os.getenv("DATABASE_URL", "sqlite:///banco.db"))
 Base = declarative_base()
 
 class AccessLevel(str, Enum):
