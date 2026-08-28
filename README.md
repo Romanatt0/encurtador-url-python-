@@ -175,8 +175,11 @@ O projeto usa **PostgreSQL** (container Docker) e **SQLite** apenas como fallbac
 
 A URL de conexão é lida da variável de ambiente `DATABASE_URL`:
 
-- `postgresql+psycopg2://postgres:postgres@postgres:5432/encurtador` — dentro da rede Docker
-- `postgresql+psycopg2://postgres:postgres@localhost:5433/encurtador` — acesso externo ao container (DBeaver, apps locais)
+- `postgresql+psycopg2://admin:Romanatto123@postgres:5432/encurtador` — dentro da rede Docker (API no container)
+- `postgresql+psycopg2://admin:Romanatto123@localhost:5433/encurtador` — acesso externo ao container (Alembic local, DBeaver, apps locais)
+
+> O host `postgres` **só resolve dentro da rede Docker**. Na sua máquina, use `localhost` + porta `5433`.
+> As credenciais acima são exemplos do `.env` atual — sempre leia do `.env`.
 
 O engine SQLAlchemy é definido em `src/models/models.py`:
 
@@ -439,6 +442,10 @@ O projeto lê variáveis do `.env` para configuração:
 - `API_KEY`
 - `DATABASE_URL`
 
+> O arquivo `.env` **não é versionado** (contém segredos). O repositório inclui um
+> modelo em `.env.example` — copie-o para `.env` e preencha com valores reais:
+> `Copy-Item .env.example .env`
+
 ## Migrations Com Alembic
 
 Configuração principal:
@@ -453,9 +460,13 @@ Revisões atuais:
 
 ### Comandos úteis
 
-Rodando a partir de `src/`:
+Rodando a partir de `src/` (local, contra o Postgres do container):
 
-```bash
+> O `.env` aponta para o host `postgres`, que só resolve dentro do Docker.
+> Para rodar Alembic **na sua máquina**, sobrescreva a `DATABASE_URL` com `localhost:5433`:
+
+```powershell
+$env:DATABASE_URL = "postgresql+psycopg2://admin:Romanatto123@localhost:5433/encurtador"
 alembic current
 alembic heads
 alembic history
@@ -463,12 +474,18 @@ alembic upgrade head
 alembic revision --autogenerate -m "descricao"
 ```
 
-Rodando a partir da raiz do projeto:
+Rodando de dentro do container (a `DATABASE_URL` já resolve `postgres` na rede Docker):
 
-```bash
-py -m alembic -c "src/alembic.ini" upgrade head
-py -m alembic -c "src/alembic.ini" revision --autogenerate -m "descricao"
+```powershell
+docker compose exec api alembic current
+docker compose exec api alembic upgrade head
 ```
+
+### Fluxo típico
+
+1. **Gerar migração localmente** (com `localhost:5433`, via `--autogenerate`) — compara os models com o banco real e gera a nova revisão. Commit da revisão.
+2. **Deploy na VPS**: `docker compose up --build -d` — o `Dockerfile` executa `alembic upgrade head` automaticamente, aplicando a nova revisão.
+3. **Conferir/ajustar**: `docker compose exec api alembic current` (ou local com `localhost:5433`).
 
 ## Docker
 
@@ -479,14 +496,29 @@ A aplicação roda em containers com dois serviços:
 
 Mapeamento de portas:
 
-| Serviço | Host | Container |
+| Serviço | Porta utilizada | Exposição |
 |---|---|---|
-| api | 8000 | 8000 |
-| postgres | 5433 | 5432 |
+| api | 8000 | Internet (única porta exposta ao mundo) |
+| postgres | 5433 | Somente rede local (host/DBeaver) |
 
 > A porta do host do Postgres é `5433` para evitar conflito com um PostgreSQL
 > nativo do Windows que ocupa a `5432`. Por isso o DBeaver e ferramentas externas
 > usam `localhost:5433`.
+
+### Política de rede: local vs. internet
+
+- A **porta `8000` (API)** é a única que deve ficar exposta à internet.
+- A **porta `5433` (Postgres)** fica exposta apenas à **rede local/LAN** (acesso via
+  sua máquina, DBeaver, Alembic local).
+- O bloqueio de rede **externa/internet não é feito no `docker-compose.yml`** — é feito
+  no **firewall do deploy** (ex. VPS/cloud): libere apenas a porta `8000` e **bloqueie**
+  a porta `5433` para acesso externo. Assim, quem não tem acesso à VPS/SSH não alcança
+  o banco; somente a API fica visível publicamente.
+- Para acessar o banco de fora da VPS sem abrir a porta à internet, use um **túnel SSH**:
+  ```powershell
+  ssh -L 5433:localhost:5433 user@VPS_IP
+  ```
+  Depois o DBeaver conecta em `localhost:5433` normalmente.
 
 ### Subir os containers
 
@@ -509,25 +541,85 @@ docker images                  # listar imagens
 
 ### Acessando o banco (DBeaver e afins)
 
-O serviço `postgres` é criado com:
+O serviço `postgres` é criado com (valores do `.env`):
 
 - `POSTGRES_DB=encurtador`
-- `POSTGRES_USER=postgres`
-- `POSTGRES_PASSWORD=postgres`
+- `POSTGRES_USER=admin`
+- `POSTGRES_PASSWORD=Romanatto123`
 
 No DBeaver:
 
 - **Host:** `localhost`
 - **Porta:** `5433`
 - **Database:** `encurtador`
-- **User:** `postgres`
-- **Password:** `postgres`
+- **User:** `admin`
+- **Password:** `Romanatto123`
 
 Ou pela JDBC URL:
 
 ```
-jdbc:postgresql://localhost:5433/encurtador?user=postgres&password=postgres
+jdbc:postgresql://localhost:5433/encurtador?user=admin&password=Romanatto123
 ```
+
+> A partir de outra máquina (VPS), para usar o DBeaver sem expor o banco à internet,
+> utilize o túnel SSH descrito acima.
+
+## Preparação Para Produção
+
+### Secrets e configuração de ambiente
+
+- O `.env` **nunca é versionado** e deve conter valores reais apenas no ambiente de deploy.
+- No deploy, injete as variáveis via secrets da plataforma (painel da VPS, GitHub Actions
+  secrets, `--env-file`, etc.) — não copie o `.env` local para o servidor.
+- Variáveis esperadas em produção:
+
+| Variável | Valor de prod |
+|---|---|
+| `SECRET_KEY` | chave longa e aleatória (obrigatória — falha o startup se ausente) |
+| `HASH` | `HS256` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_MINUTES` | tempos em minutos (≥ 1) |
+| `DATABASE_URL` | `postgresql+psycopg2://...@postgres:5432/encurtador` (host `postgres`) |
+| `CORS_ORIGINS` | origens reais do frontend, separadas por vírgula |
+| `API_BASE_URL` | URL pública real da API |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | credenciais do banco |
+
+> O arquivo `.env.example` lista todas as variáveis. Copie e preencha:
+> `Copy-Item .env.example .env` (apenas para desenvolvimento local).
+
+### Reverse proxy e TLS
+
+- Recomenda-se um reverse proxy (nginx, Caddy) ou o balanceador/load balancer do cloud
+  à frente da API, com **HTTPS (TLS)**.
+- Exponha ao mundo **somente** a porta `8000` (API).
+- Mantenha a porta `5433` (Postgres) acessível **apenas na rede local do host/LAN** —
+  bloqueie o acesso externo/internet no firewall do deploy (ver seção "Docker → Política
+  de rede").
+
+### Backups do Postgres
+
+- Os dados ficam no volume `postgres_data`. **O Docker não faz backup automático.**
+- Dump manual (estando na máquina/VPS com o compose):
+  ```powershell
+  docker compose exec postgres pg_dump -U admin encurtador > backup_$(Get-Date -Format yyyyMMdd).sql
+  ```
+- Restore em caso de necessidade:
+  ```powershell
+  Get-Content backup.sql | docker compose exec -T postgres psql -U admin -d encurtador
+  ```
+- Recomendações:
+  - agende o dump (ex. cron) e **armazene fora da VPS** (bucket/objeto);
+  - faça um backup inicial antes do primeiro grande uso;
+  - **teste o restore** periodicamente para garantir que o backup é válido.
+
+### Checklist de Go-Live
+
+- [ ] `docker compose up --build -d` sobe sem erros
+- [ ] `alembic upgrade head` executa automaticamente (ver logs: `docker compose logs -f api`)
+- [ ] Testes passam localmente (`pytest` em `src/`)
+- [ ] Somente a porta `8000` está acessível externamente; `5433` só na rede local
+- [ ] `SECRET_KEY` e demais secrets definidos no ambiente do deploy (não no código/git)
+- [ ] TLS/HTTPS ativo via reverse proxy
+- [ ] Backup inicial criado e restore testado
 
 ## Como Executar
 
@@ -558,9 +650,10 @@ pip install -r requirements.txt
 
 ### 4. Aplicar migrations
 
-Na pasta `src`:
+Na pasta `src`, contra o Postgres do container (sobrescrevendo o host `postgres` pelo `localhost:5433`):
 
-```bash
+```powershell
+$env:DATABASE_URL = "postgresql+psycopg2://admin:Romanatto123@localhost:5433/encurtador"
 alembic upgrade head
 ```
 
