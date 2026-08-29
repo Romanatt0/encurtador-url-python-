@@ -7,10 +7,31 @@ import os
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("HASH")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
-REFRESH_TOKEN_EXPIRE_MINUTES = int(os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES"))  # 7 dias
+
+def _require_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def _get_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise RuntimeError(f"Invalid integer for environment variable {name}: {raw!r}")
+    if value < 1:
+        raise RuntimeError(f"Environment variable {name} must be >= 1, got {value}")
+    return value
+
+
+SECRET_KEY = _require_env("SECRET_KEY")
+ALGORITHM = os.getenv("HASH", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = _get_int_env("ACCESS_TOKEN_EXPIRE_MINUTES", 30)
+REFRESH_TOKEN_EXPIRE_MINUTES = _get_int_env("REFRESH_TOKEN_EXPIRE_MINUTES", 1080)  # 7 dias
 
 bcrypt_hash = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/user/login")
