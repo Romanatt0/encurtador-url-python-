@@ -50,7 +50,7 @@ async def generate_qrcode(request: Request, short_id: str, session: Session = De
     short_url = get_active_short_url_or_404(session, short_id)
 
     base_url = str(request.base_url).rstrip("/")
-    redirect_url = f"{base_url}/{short_id}"
+    redirect_url = f"{base_url}/s/{short_id}"
 
     qr = qrcode.QRCode(box_size=10, border=4)
     qr.add_data(redirect_url)
